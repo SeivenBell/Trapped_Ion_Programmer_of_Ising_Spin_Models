@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "triprism"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.1",
+    "torchvision",
+    "torchaudio",
+    "numpy",
+    "trical"
+]
+
+
+[tool.setuptools]
+packages = ["triprism"]
