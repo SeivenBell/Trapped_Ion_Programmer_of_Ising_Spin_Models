@@ -7,4 +7,10 @@ Here we will talk about The Plan, flow of the project and responsibiliites and d
 Our workflow: 
 1. Each block of the project will have their own branch to avoid conflicts and mess
 2. Branches will live for a day or two. People should push at least 2 changes to each branch to practice 
-3. 
+
+
+plan: 
+
+1. We will have 3 meeting a week 
+
+2. git will have a branch for 

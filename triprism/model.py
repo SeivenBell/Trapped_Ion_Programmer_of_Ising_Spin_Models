@@ -11,22 +11,48 @@ import trical
 
 class SpinDecoder(nn.Module):
     def __init__(self, ti, mu, deltak=torch.Tensor([1, 0, 0]) * 4 * torch.pi / 355e-9):
-        # Purpose: This class seems to decode a set of inputs 
-        # into a form that represents the interactions in a quantum system (likely ion spins).
-        # ti: An object representing the trapped ions in the quantum system.
-        # mu: A tensor representing frequencies of the quantum system.
-        # deltak: A default tensor value representing the change in wave vector (connection
-        #           between the wave vector and the frequency).
-        
+            """
+            A PyTorch Module for decoding quantum states in a system of trapped ions. 
+            It takes into account the physical properties of the ions and their interactions, 
+            transforming encoded quantum states into a matrix form representing spin interactions.
 
-        pass
+            Parameters:
+            - ti (object): An object representing trapped ions in a quantum system. This should 
+                contain attributes like the number of ions (N), mass (m), frequencies (w), and 
+                coupling coefficients (b).
+            - mu (torch.Tensor): A tensor representing specific physical parameters of the system,
+                possibly related to the frequencies or other characteristics relevant to the 
+                quantum interactions.
+            - deltak (torch.Tensor, optional): A tensor representing the change in the wave 
+                vector, related to the wavelength of the light used in ion trapping.
+                Default is set to correspond to a 355 nm wavelength.
+
+            The class registers several buffers that are constants during the training:
+            - hbar: Reduced Planck's constant, obtained from trical.misc.constants.
+            - m: Mass of the ions, derived from the 'ti' object.
+            - w: Frequencies associated with the ions, derived from 'ti'.
+            - b: Coupling matrix reshaped for computation, derived from 'ti'.
+            - mu: Physical parameter tensor passed during initialization.
+            - deltak: Change in wave vector tensor.
+            - eta: Tensor representing the coupling strength between the ions and the external field.
+            - nu: Tensor representing the inverse of the difference between the square of mu and the square of frequencies.
+            - w_mult_nu: Element-wise product of w and nu.
+
+            Methods:
+            - vectorize_J(x): Converts a matrix of interactions (J) into a vector form.
+            - matrixify_J(x): Converts a vectorized interaction matrix back into its matrix form.
+            - forward(x): Performs the forward pass of the network. It computes the interaction matrix 
+                from the input, vectorizes it, normalizes it, and then returns the result.
+
+            """
+            pass
 
     def vectorize_J(self, x):
-        # Converts a matrix of interactions (J) into a vector form. 
-        # This is useful for processing in neural networks.
-        idcs = torch.triu_indices(self.N, self.N, 1)
-        y = x[..., idcs[0], idcs[1]]
-        return y
+            # Converts a matrix of interactions (J) into a vector form. 
+            # This is useful for processing in neural networks.
+            idcs = torch.triu_indices(self.N, self.N, 1)
+            y = x[..., idcs[0], idcs[1]]
+            return y
 
     def matrixify_J(self, x):
         # The inverse of vectorize_J; it converts the vectorized interactions back into a matrix form.

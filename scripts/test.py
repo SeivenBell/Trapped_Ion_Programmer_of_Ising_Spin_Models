@@ -1,5 +1,41 @@
-# Imports
+"""
+Quantum System Evaluation Script
 
+This script is designed for the evaluation and visualization of a neural network model that has been trained for 
+quantum systems simulation. It integrates PyTorch for neural network operations, matplotlib and seaborn for data visualization, 
+and MLflow for experiment tracking and model retrieval.
+
+Functions and Workflow:
+
+1. Matplotlib Configuration:
+    - Sets up parameters for plotting to ensure consistent visualization styles.
+
+2. MLflow Integration:
+    - Initializes or retrieves an MLflow experiment for tracking the simulation runs and loads the model from the MLflow tracking server.
+
+3. Utility Class `_RunName`:
+    - A class designed to generate unique names for MLflow runs, facilitating the identification of specific model runs or experiments.
+
+4. Model Loading:
+    - Searches for and loads a specific neural network model based on parameters set in the script. The model is expected 
+    to be related to quantum system simulations.
+
+5. Quantum Simulation Parameters:
+    - Defines parameters for quantum simulations and processes interaction matrices for analysis.
+
+6. Model Testing and Visualization:
+    - Generates and visualizes quantum interaction matrices using 3D bar plots to evaluate the model's performance.
+
+7. Fidelity Calculation and Plotting:
+    - Calculates and plots a fidelity metric between different interaction matrices, assessing the accuracy or quality 
+    of the model's predictions.
+
+"""
+
+
+
+
+# Imports
 import os
 import sys
 

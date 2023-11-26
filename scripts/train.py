@@ -1,3 +1,37 @@
+
+"""
+Training Script for PrISM
+
+Workflow Steps:
+
+1. Library Imports:
+    - Import `trical` and `triprism` for quantum mechanics and simulation-specific functionalities.
+
+2. MLflow Experiment Setup:
+    - Initialize or create an MLflow experiment for tracking and logging the simulation runs.
+
+3. Utility Class and Function:
+    - `_RunName`: A utility class to generate unique run names for MLflow tracking.
+    - `append_log10`: A function to log the base-10 transformation of specified parameters.
+
+4. Quantum System Initialization:
+    - Define system-specific parameters like the number of ions, mass, and frequencies.
+    - Utilize `trical` to set up the trapped ion system (`ti`) and polynomial potential (`tp`).
+
+5. Neural Network Setup:
+    - Define neural network hyperparameters like hidden units and rank.
+    - Initialize the k-rank Rabi encoder, spin decoder, and the composite model (`PrISM`) for simulation.
+
+6. Training and Evaluation Logic:
+    - Implement `evaluate_metrics` function to compute training and evaluation metrics.
+    - Define training and evaluation loops for the model.
+
+7. Model Saving
+
+"""
+
+
+
 # Imports
 
 import os

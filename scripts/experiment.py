@@ -1,4 +1,52 @@
 # Imports
+"""
+This script is designed for the simulation and analysis of quantum systems, particularly focused on trapped ions using machine learning techniques. 
+
+
+Workflow:
+1. Environment Setup:
+   - Adjust the system path to include custom modules.
+   - Configure matplotlib parameters for consistent plotting styles.
+
+2. Experiment Tracking Setup:
+   - Initialize MLflow experiment tracking with an experiment name.
+
+3. Classes and Functions:
+   - `_RunName`: A utility class for generating consistent naming conventions for MLflow runs.
+   - `append_log10`: A function to append log-transformed parameters for MLflow logging.
+
+4. Quantum System Initialization:
+   - Define system parameters like the number of ions, mass, frequencies.
+   - Initialize trapped ion system (`ti`) and potential (`tp`) using 'trical'.
+
+5. Neural Network Configuration:
+   - Set hyperparameters like the number of hidden units, rank for the encoder.
+   - Initialize the encoder, decoder, and model (`PrISM`) for the quantum simulation.
+
+7. Model Summary:
+   - Display a summary of the model architecture using `torchinfo`.
+
+8. Training Configuration:
+   - Define training parameters like epochs, batch size, learning rate.
+   - Configure optimizer and learning rate scheduler.
+
+9. Training and Evaluation Functions:
+   - `evaluate_metrics`: Function to compute various metrics during training and validation.
+
+10. Training Loop:
+    - Iterative training of the model using generated random interactions.
+    - Logging training progress and metrics using MLflow.
+
+11. Model Saving:
+    - Save the trained model using MLflow with the specified environment details.
+
+Usage:
+- Modify quantum system parameters (e.g., number of ions, mass, frequencies) as needed for specific simulations.
+- Adjust neural network hyperparameters (e.g., number of hidden units, learning rate) to experiment with different model configurations.
+- Run the script in an environment where MLflow is accessible for experiment tracking.
+- The script automatically logs training progress and model details, and saves the final model for later use or analysis.
+
+"""
 
 import os
 import sys
