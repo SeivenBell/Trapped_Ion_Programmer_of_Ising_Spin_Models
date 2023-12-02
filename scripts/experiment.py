@@ -81,43 +81,43 @@ import triprism
 
 # Package parameters
 
-matplotlib.rcParams["figure.figsize"] = (, )
-matplotlib.rcParams["font.size"] = 
-matplotlib.rcParams["text.usetex"] = 
-matplotlib.rcParams["mathtext.fontset"] = ""
-matplotlib.rcParams["font.family"] = ""
+matplotlib.rcParams["figure.figsize"] = (12, 8)
+matplotlib.rcParams["font.size"] = 20
+matplotlib.rcParams["text.usetex"] = True
+matplotlib.rcParams["mathtext.fontset"] = "stix"
+matplotlib.rcParams["font.family"] = "STIXGeneral"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ########################################################################################
 
-N = 
-m = 
-l = 
+N = 10
+m = trical.misc.constants.convert_m_a(171)
+l = 1e-6
 
-omega = 
-alpha = 
+omega = 2 * np.pi * np.array([5, 5.1, 0.41]) * 1e6
+alpha = np.zeros([3, 3, 3])
 alpha[tuple(np.eye(3, dtype=int) * 2)] = m * omega**2 / 2
-tp = 
+tp = trical.classes.PolynomialPotential(alpha)
 
-ti = 
+ti = trical.classes.TrappedIons(N, tp)
 ti.normal_modes(block_sort=True)
 
 ########################################################################################
 
-omicron = 
-wx = 
-_wx = 
-mu = 
-mu = 
+omicron = 0.1
+wx = ti.w[:N]
+_wx = np.concatenate([wx[0:1] + (wx[0:1] - wx[-1:]) / N, wx], axis=0)
+mu = _wx[1:] + omicron * (_wx[:-1] - _wx[1:])
+mu = torch.from_numpy(mu)
 
 #######################################################################################
 
-N_h = 
-encoder = 
-decoder = 
+N_h = 1024
+encoder = triprism.RabiEncoder(N, N_h)
+decoder = triprism.SpinDecoder(ti, mu)
 
-model = 
+model = triprism.PrISM(encoder=encoder, decoder=decoder)
 model.to(device=device)
 
 ########################################################################################
