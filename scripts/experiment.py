@@ -1,4 +1,3 @@
-# Imports
 """
 This script is designed for the simulation and analysis of quantum systems, particularly focused on trapped ions using machine learning techniques. 
 
@@ -77,7 +76,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import seaborn as sns
 
 import trical
-import triprism.model_our_copy
+import triprism.model
 
 ########################################################################################
 
