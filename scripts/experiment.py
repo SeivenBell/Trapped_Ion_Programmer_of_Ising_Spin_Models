@@ -48,6 +48,8 @@ Usage:
 
 """
 
+# Imports
+
 import os
 import sys
 
@@ -61,11 +63,11 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from torch.optim import lr_scheduler
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 
 from torchinfo import summary
 
-import mlflow
+#import mlflow
 
 import matplotlib
 from matplotlib import colors, cm, patches
@@ -75,49 +77,49 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import seaborn as sns
 
 import trical
-import triprism
+import triprism.model_our_copy
 
 ########################################################################################
 
 # Package parameters
 
-matplotlib.rcParams["figure.figsize"] = (, )
-matplotlib.rcParams["font.size"] = 
-matplotlib.rcParams["text.usetex"] = 
-matplotlib.rcParams["mathtext.fontset"] = ""
-matplotlib.rcParams["font.family"] = ""
+matplotlib.rcParams["figure.figsize"] = (12, 8)
+matplotlib.rcParams["font.size"] = 20
+matplotlib.rcParams["text.usetex"] = True
+matplotlib.rcParams["mathtext.fontset"] = "stix"
+matplotlib.rcParams["font.family"] = "STIXGeneral"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ########################################################################################
 
-N = 
-m = 
-l = 
+N = 10 # number of ions in configuration
+m = trical.misc.constants.convert_m_a(171)
+l =  1e-6
 
-omega = 
-alpha = 
+omega = 2 * np.pi * np.array([5, 5.1, 0.41]) * 1e6
+alpha = np.zeros([3, 3, 3])
 alpha[tuple(np.eye(3, dtype=int) * 2)] = m * omega**2 / 2
-tp = 
+tp = trical.classes.PolynomialPotential(alpha)
 
-ti = 
+ti = trical.classes.TrappedIons(N, tp)
 ti.normal_modes(block_sort=True)
 
 ########################################################################################
 
-omicron = 
-wx = 
-_wx = 
-mu = 
-mu = 
+omicron = 0.1
+wx = ti.w[:N]
+_wx = np.concatenate([wx[0:1] + (wx[0:1] - wx[-1:]) / N, wx], axis=0)
+mu = _wx[1:] + omicron * (_wx[:-1] - _wx[1:])
+mu = torch.from_numpy(mu)
 
 #######################################################################################
 
-N_h = 
-encoder = 
-decoder = 
+N_h = 1024 #  number of hidden layers
+encoder = triprism.RabiEncoder(N, N_h)
+decoder = triprism.SpinDecoder(ti, mu)
 
-model = 
+model = triprism.PrISM(encoder=encoder, decoder=decoder)
 model.to(device=device)
 
 ########################################################################################
@@ -127,25 +129,41 @@ print("")
 
 #######################################################################################
 
-N_epochs = 
-batch_size = 
+N_epochs = 250
+batch_size = 1000
 
-lr =
-optimizer_algorithm = 
-schedule_params = {"": }
-schedule_algorithm = 
-optimizer = optimizer_algorithm()
-schedule = schedule_algorithm()
+lr = 0.001
+optimizer_algorithm = AdamW
+schedule_params = {"factor": 1}
+schedule_algorithm = lr_scheduler.ConstantLR # use for some optimizer algorithms
+optimizer = optimizer_algorithm(model.parameters(), lr=lr)
+schedule = schedule_algorithm(optimizer, **schedule_params) # use for some optimizer algorithms
 
 ########################################################################################
 
 step = 0
+train_fidelities = []
+val_fidelities = []
+
+train_losses = []
+val_losses = []
+
 for epoch in range(N_epochs):
-    
-    
-    
-    
-    
+    J_train = triprism.generate_random_interactions(N, batch_size, device)
+    J_val = triprism.generate_random_interactions(N, batch_size, device)
+
+    optimizer.zero_grad()
+
+    train_infidelity = model.train().reconstruction_loss(J_train)
+
+    running_loss = train_infidelity
+    running_loss.backward()
+    optimizer.step()
+    schedule.step()
+    step += 1
+
+    val_infidelity = model.eval().reconstruction_loss(J_val)
+    val_loss = val_infidelity
 
     metrics = dict(
         epoch=epoch + 1,
@@ -157,28 +175,49 @@ for epoch in range(N_epochs):
         val_fidelity=1 - train_infidelity,
     )
 
+    # save performance metrics after each epoch
+    train_fidelities.append(metrics["train_fidelity"].cpu().detach().numpy())
+    val_fidelities.append(metrics["val_fidelity"].cpu().detach().numpy())
+
+    train_losses.append(metrics["train_loss"].cpu().detach().numpy())
+    val_losses.append(metrics["val_loss"].cpu().detach().numpy())
+
     ########################################################################################
 
     print(
-       
+        "{:<180}".format(
+            "\r"
+            + "[{:<60}] ".format(
+                "=" * ((np.floor((epoch + 1) / N_epochs * 60)).astype(int) - 1) + ">"
+                if epoch + 1 < N_epochs
+                else "=" * 60
+            )
+            + "{:<40}".format(
+                "Epoch {}/{}: Fidelity(Train) = {:.5f}, Fidelity(Val) = {:.5f}".format(
+                    metrics["epoch"],
+                    N_epochs,
+                    metrics["train_fidelity"],
+                    metrics["val_fidelity"],
                 )
-    
-    
+            )
+        ),
+        end="",
+    )
     sys.stdout.flush()
 
 ########################################################################################
 
-alpha = 
-J = 
-J = 
+alpha = torch.linspace(0, 5, 101).to(device)
+J = torch.from_numpy(np.indices((N, N))).to(device)
+J = 1 / torch.abs(J[0] - J[1])[None, :, :] ** alpha[:, None, None]
 J[..., range(N), range(N)] = 0
 
-x = 
-x = 
-J = 
+x = model.decoder.vectorize_J(J)
+x = x / torch.norm(x, dim=-1, keepdim=True)
+J = model.decoder.matrixify_J(x)
 
-Jnn = 
-Omega = 
+Jnn = model.decoder.matrixify_J(model(x))
+Omega = model.encoder.forwardOmega(x)
 
 J = J / torch.norm(J, dim=(-1, -2), keepdim=True)
 Jnn = Jnn / torch.norm(Jnn, dim=(-1, -2), keepdim=True)
@@ -188,7 +227,7 @@ Jnn = Jnn / torch.norm(Jnn, dim=(-1, -2), keepdim=True)
 fig = plt.figure()
 ax = fig.subplots(1, 3, subplot_kw=dict(projection="3d"))
 
-i = 
+i = 10
 
 norm = colors.Normalize(
     torch.stack([J[i], Jnn[i]]).min(), torch.stack([J[i], Jnn[i]]).max()
@@ -232,6 +271,7 @@ ax[2].set_zlim(
     max(Omega[i].max().cpu().detach().numpy(), 0),
 )
 
+fig.savefig("plot1.png")
 
 ########################################################################################
 
@@ -242,7 +282,11 @@ ax = fig.subplots(1, 1)
 
 ax.plot(alpha.cpu().detach().numpy(), F.cpu().detach().numpy())
 
-ax.set_xlabel(r"$\alpha$")
+ax.set_label(r"$\alpha$")
 ax.set_ylabel(
     r"$\mathcal{F} \left( J_{ij} (\Omega^{\mathrm{NN}}), 1 / |i-j|^\alpha \right)$"
 )
+
+fig.savefig("plot2.png")
+
+

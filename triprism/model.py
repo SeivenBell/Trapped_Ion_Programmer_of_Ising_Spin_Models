@@ -1,170 +1,182 @@
 import torch
 from torch import nn
-from torch.nn import Module
 from torch.nn import functional as F
 from torch.nn.init import xavier_uniform_
-
 import trical
+import numpy as np
+
+torch.autograd.set_detect_anomaly(True)
 
 ########################################################################################
 
-
 class SpinDecoder(nn.Module):
-    def __init__(self, ti, mu, deltak=torch.Tensor([1, 0, 0]) * 4 * torch.pi / 355e-9):
-            """
-            A PyTorch Module for decoding quantum states in a system of trapped ions. 
-            It takes into account the physical properties of the ions and their interactions, 
-            transforming encoded quantum states into a matrix form representing spin interactions.
+    """
+    A neural network module that decodes spin interactions in a quantum system.
 
-            Parameters:
-            - ti (object): An object representing trapped ions in a quantum system. This should 
-                contain attributes like the number of ions (N), mass (m), frequencies (w), and 
-                coupling coefficients (b).
-            - mu (torch.Tensor): A tensor representing specific physical parameters of the system,
-                possibly related to the frequencies or other characteristics relevant to the 
-                quantum interactions.
-            - deltak (torch.Tensor, optional): A tensor representing the change in the wave 
-                vector, related to the wavelength of the light used in ion trapping.
-                Default is set to correspond to a 355 nm wavelength.
+    Attributes:
+    - N (int): The size of the spin system.
+    - hbar, m, w, b, mu, deltak, eta, nu, w_mult_nu: Physical parameters and tensors representing the quantum system.
+    """
+    def __init__(self, ti, mu, deltak=torch.tensor([1, 0, 0]) * 4 * torch.pi / 355e-9):
+        super(SpinDecoder, self).__init__()
+        self.N = ti.N
 
-            The class registers several buffers that are constants during the training:
-            - hbar: Reduced Planck's constant, obtained from trical.misc.constants.
-            - m: Mass of the ions, derived from the 'ti' object.
-            - w: Frequencies associated with the ions, derived from 'ti'.
-            - b: Coupling matrix reshaped for computation, derived from 'ti'.
-            - mu: Physical parameter tensor passed during initialization.
-            - deltak: Change in wave vector tensor.
-            - eta: Tensor representing the coupling strength between the ions and the external field.
-            - nu: Tensor representing the inverse of the difference between the square of mu and the square of frequencies.
-            - w_mult_nu: Element-wise product of w and nu.
+        # Define the constants and parameters directly as class attributes
+        self.hbar = torch.tensor(trical.misc.constants.hbar, dtype=torch.float32)
+        self.m = torch.tensor(ti.m, dtype=torch.float32)
+        self.w = torch.tensor(ti.w, dtype=torch.float32)
+        self.b = ti.b.reshape(3, self.N, 3 * self.N).to(torch.float32)
+        self.mu = mu.to(torch.float32)
+        self.deltak = deltak.to(torch.float32)
 
-            Methods:
-            - vectorize_J(x): Converts a matrix of interactions (J) into a vector form.
-            - matrixify_J(x): Converts a vectorized interaction matrix back into its matrix form.
-            - forward(x): Performs the forward pass of the network. It computes the interaction matrix 
-                from the input, vectorizes it, normalizes it, and then returns the result.
-
-            """
-            pass
+        # Compute additional parameters
+        sqrt_term = torch.sqrt(self.hbar / (2 * self.m * self.w))
+        self.eta = torch.matmul(self.b, self.deltak.view(-1, 1)).view(self.N, 3) * sqrt_term
+        self.nu = 1 / ((self.mu**2)[:, None] - (self.w**2)[None, :])
+        self.w_mult_nu = self.w * self.nu
 
     def vectorize_J(self, x):
-            # Converts a matrix of interactions (J) into a vector form. 
-            # This is useful for processing in neural networks.
-            idcs = torch.triu_indices(self.N, self.N, 1)
-            y = x[..., idcs[0], idcs[1]]
-            return y
+        """
+        Converts a matrix J to a vector by extracting the upper triangular part.
+
+        Args:
+        - x: The matrix to be vectorized.
+
+        Returns:
+        - Tensor: The vectorized form of the matrix.
+        """
+        N = x.size(-1)
+        mask = torch.triu(torch.ones(N, N, device=x.device), diagonal=1).bool()
+        return x[..., mask]
 
     def matrixify_J(self, x):
-        # The inverse of vectorize_J; it converts the vectorized interactions back into a matrix form.
-        
+        """
+        Converts a vector back to a matrix J.
+
+        Args:
+        - x: The vector to be converted into a matrix.
+
+        Returns:
+        - Tensor: The matrix form of the vector.
+        """
+        N = self.N
+        mask = torch.triu(torch.ones(N, N, device=x.device), diagonal=1).bool()
+        J = torch.zeros((*x.shape[:-1], N, N), device=x.device)
+        J[..., mask] = x
+        J = J + J.transpose(-2, -1)  # Make the matrix symmetric
         return J
 
     def forward(self, x):
-        # x: A tensor of interactions (J)
-        # y: A tensor of ion spins (S)
-        # computes the interaction matrix from the input 
-        # vectorizes it, normalizes it, and then returns the result.
-        # einsum("...im,in->...imn", x, self.eta)
-        # einsum("...imn,...jmn->...ij", y, y * self.w_mult_nu)
+        # Replace einsum for more intuitive tensor operations
+        y = torch.matmul(x.unsqueeze(-1), self.eta.unsqueeze(0)).squeeze(-1)
+        y = torch.matmul(y, (y * self.w_mult_nu).transpose(-1, -2))
         
-        return y
-
-    pass
-
+        vectorized_y = self.vectorize_J(y)
+        normalized_y = vectorized_y / torch.norm(vectorized_y, dim=-1, keepdim=True)
+        return normalized_y
 
 ########################################################################################
-
 
 class RabiEncoder(nn.Module):
-    def __init__(self, N, N_h, activation=torch.nn.Identity()):
-        # N: The size of the input.
-        # N_h: The number of hidden units.
-        # activation: An activation function (default is identity).
+    """
+    Encodes Rabi frequencies for a quantum system using a neural network.
+
+    Attributes:
+    - N (int): Size of the spin system.
+    - N_h (int): Number of hidden units in the linear layers.
+    - activation (torch.nn.Module): Activation function.
+    - layers (torch.nn.Sequential): Sequential container of layers.
+    """
+    def __init__(self, N, N_h, activation=None):
+        """
+        Initializes the RabiEncoder with specified parameters.
+
+        Args:
+        - N (int): Size of the spin system.
+        - N_h (int): Number of hidden units.
+        - activation (torch.nn.Module): Activation function. Defaults to Identity if None.
+        """
+        super(RabiEncoder, self).__init__()
+        self.N = N
+        self.N_h = N_h # optionally use as the number of hidden units
+        self.activation = nn.ReLU() if activation is None else activation
+
+        # Feedforward network
+        self.layers = nn.Sequential(
+            nn.Linear(self.N * (self.N - 1) // 2, self.N_h),
+            self.activation,
+            nn.Linear(self.N_h, self.N_h),
+            self.activation,
+            nn.Linear(self.N_h, self.N * self.N)
+            
+        )
         
-        # self.linear and self.linear2) for transforming the input data.
-
-        pass
-
-    def forward(self, x):
-       # Processes the input through the linear layers and an activation function
-       # (ReLU followed by the specified activation function), and reshapes the output to 
-       # a specific format.
-
-        return y
-
     def forwardOmega(self, x):
-       # pass that normalizes the output of the forward method.
-        
-        return y
+        """
+        Normalizes the output of the forward pass.
 
-    pass
+        Args:
+        - x (Tensor): Input tensor.
 
-
-class kRankRabiEncoder(nn.Module):
-    #k: the rank for the approximation.
-    def __init__(self, k, N, N_h, activation=torch.nn.Identity()):
-        super().__init__()
-         #it adds another linear layer (self.linear3)
-        
-
-        
-
-        pass
-
-    def forward(self, x):
-        # Similar to RabiEncoder, but processes the input into two separate paths (y1 and y2) 
-        # 2 reshapes ruquired (y1 and y2)
-        y = (y1, y2)
-
-        return y
-
-    def forwardOmega(self, x):
-        
-        return y
-
-    pass
+        Returns:
+        - Tensor: Normalized tensor after encoding.
+        """
+        y = self.forward(x)
+        return y / torch.norm(y, dim=(-1, -2), keepdim=True)
 
 
 ########################################################################################
 
-
 class PrISM(nn.Module):
-    def __init__(self, encoder, decoder):
-        super().__init__()
+    """
+    PrISM model integrating an encoder and a decoder for processing quantum system interactions.
 
+    Attributes:
+    - encoder (torch.nn.Module): Encoder module.
+    - decoder (torch.nn.Module): Decoder module.
+    """
+    def __init__(self, encoder, decoder):
+        """
+        Initializes the PrISM model with an encoder and a decoder.
+
+        Args:
+        - encoder (torch.nn.Module): An instance of the encoder.
+        - decoder (torch.nn.Module): An instance of the decoder.
+        """
+        super(PrISM, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
+        self.reset_parameters()
 
-        self._reset_parameters()
-
-        pass
-
-    def _reset_parameters(self):
+    def reset_parameters(self):
+        """ Reset parameters using Xavier uniform initialization. """
         for p in self.parameters():
             if p.dim() > 1:
                 xavier_uniform_(p)
-        pass
 
     def forward(self, x):
-        y = self.encoder.forwardOmega(x)
-        y = self.decoder(y)
+        """
+        Forward pass through the PrISM model.
 
-        return y
+        Args:
+        - x (Tensor): Input tensor.
 
-    def smoothed_reconstruction_loss(self, x, smoothing_factor):
+        Returns:
+        - Tensor: The output tensor after encoding and decoding.
+        """
+        y = self.encoder(x)
+        return self.decoder(y)
 
-        y = self.decoder(y)
-
-        return 1 - torch.einsum("...i,...i->...", y, x).mean()
+    # TODO: understand how these loss functions compares target and predicted configuration matrices
 
     def reconstruction_loss(self, x):
-        # einsum needed torch.einsum("...i,...i->...",
-        
+        """
+        Compute the reconstruction loss for the model.
 
-    def dynamic_range_penalty(self, x):
-        #Computes a penalty based on the dynamic range of the encoded output, 
-        # encouraging model stability.
-    
-        return (Omega.std() / Omega.mean()) ** 2
+        Args:
+        - x (Tensor): Input tensor.
 
-    pass
+        Returns:
+        - Tensor: The reconstruction loss.
+        """
+        return 1 - torch.einsum("...i,...i->...", self(x), x).mean()
