@@ -153,7 +153,7 @@ for epoch in range(N_epochs):
 
     optimizer.zero_grad()
 
-    train_infidelity = model.train().reconstruction_loss(J_train)
+    train_infidelity = model.train().smoothed_reconstruction_loss(J_train, 1e-2)
 
     running_loss = train_infidelity
     running_loss.backward()
@@ -287,5 +287,21 @@ ax.set_ylabel(
 )
 
 fig.savefig("plot2.png")
+
+
+# save loss and fidelity plots
+def plot_train_vs_val(train, val, title, save_path):
+    epochs = np.arange(len(train))
+    plt.cla()
+    plt.plot(epochs, train, label="Train")
+    plt.plot(epochs, val, label="Val")
+    plt.xlabel("Epoch")
+    plt.ylabel(title)
+    plt.title(title)
+    plt.legend()
+    plt.savefig(save_path)
+
+plot_train_vs_val(train_losses, val_losses, "Loss", "loss.png")
+plot_train_vs_val(train_fidelities, val_fidelities, "Fidelity", "fidelity.png")
 
 
