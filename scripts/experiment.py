@@ -93,36 +93,43 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ########################################################################################
 
 N = 10 # number of ions in configuration
-m = trical.misc.constants.convert_m_a(171)
-l =  1e-6
+m = trical.misc.constants.convert_m_a(171)  # Mass of Yb+ ion in atomic mass units
+l = 1e-6  # Characteristic length scale in meters
 
-omega = 2 * np.pi * np.array([5, 5.1, 0.41]) * 1e6
-alpha = np.zeros([3, 3, 3])
-alpha[tuple(np.eye(3, dtype=int) * 2)] = m * omega**2 / 2
-tp = trical.classes.PolynomialPotential(alpha)
+# Define trap frequencies for each dimension in Hz
+omega = 2 * np.pi * np.array([5, 5.1, 0.41]) * 1e6  # Trap frequencies in Hz
 
+# Initialize the quadratic coefficients for the trapping potential
+alpha = np.zeros([3, 3, 3])  # Tensor to hold quadratic coefficients
+alpha[tuple(np.eye(3, dtype=int) * 2)] = m * omega**2 / 2  # Populate diagonal elements
+tp = trical.classes.PolynomialPotential(alpha)  # Create a polynomial potential object
+
+# Initialize the TrappedIons class and calculate normal modes
 ti = trical.classes.TrappedIons(N, tp)
 ti.normal_modes(block_sort=True)
 
 ########################################################################################
 
-omicron = 0.1
-wx = ti.w[:N]
+# Define the detuning parameter and calculate modified trap frequencies
+omicron = 0.1  # Detuning parameter
+wx = ti.w[:N]  # Extract trap frequencies for each ion
 _wx = np.concatenate([wx[0:1] + (wx[0:1] - wx[-1:]) / N, wx], axis=0)
-mu = _wx[1:] + omicron * (_wx[:-1] - _wx[1:])
-mu = torch.from_numpy(mu)
+mu = _wx[1:] + omicron * (_wx[:-1] - _wx[1:])  # Modify frequencies based on detuning
+mu = torch.from_numpy(mu)  # Convert to a torch tensor
 
 #######################################################################################
 
-N_h = 1024 #  number of hidden layers
-encoder = triprism.RabiEncoder(N, N_h)
-decoder = triprism.SpinDecoder(ti, mu)
+# Define model architecture parameters
+N_h = 1024 # Replace with the number of hidden layers
+encoder = triprism.RabiEncoder(N, N_h)  # Initialize the encoder
+decoder = triprism.SpinDecoder(ti, mu)  # Initialize the decoder
 
 model = triprism.PrISM(encoder=encoder, decoder=decoder)
 model.to(device=device)
 
 ########################################################################################
 
+# Print a summary of the model
 print(summary(model, input_size=[10, int(N * (N - 1) / 2)], device=device))
 print("")
 
@@ -147,6 +154,8 @@ val_fidelities = []
 train_losses = []
 val_losses = []
 
+
+# Training loop
 for epoch in range(N_epochs):
     J_train = triprism.generate_random_interactions(N, batch_size, device)
     J_val = triprism.generate_random_interactions(N, batch_size, device)
@@ -161,9 +170,10 @@ for epoch in range(N_epochs):
     schedule.step()
     step += 1
 
+    # Calculate validation infidelity
     val_infidelity = model.eval().reconstruction_loss(J_val)
     val_loss = val_infidelity
-
+    # Update metrics
     metrics = dict(
         epoch=epoch + 1,
         train_loss=running_loss,
@@ -203,6 +213,18 @@ for epoch in range(N_epochs):
         end="",
     )
     sys.stdout.flush()
+    
+    #     # Severyn's possible oprimized version
+    # progress_bar = "=" * (int(np.floor((epoch + 1) / N_epochs * 60)) - 1) + ">" \
+    # if epoch + 1 < N_epochs else "=" * 60
+
+    # print(
+    #     "\r[{:<60}] Epoch {}/{}: Fidelity(Train) = {:.5f}, Fidelity(Val) = {:.5f}".format(
+    #         progress_bar, epoch + 1, N_epochs, metrics['train_fidelity'], metrics['val_fidelity']
+    #     ),
+    #     end=""
+    # )
+    # sys.stdout.flush()
 
 ########################################################################################
 
