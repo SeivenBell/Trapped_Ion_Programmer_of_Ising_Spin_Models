@@ -1,13 +1,13 @@
 import torch
 from torch import nn
+from torch.nn import Module
 from torch.nn import functional as F
 from torch.nn.init import xavier_uniform_
-import trical
-import numpy as np
 
-torch.autograd.set_detect_anomaly(True)
+import trical
 
 ########################################################################################
+
 
 class SpinDecoder(nn.Module):
     """
@@ -17,24 +17,26 @@ class SpinDecoder(nn.Module):
     - N (int): The size of the spin system.
     - hbar, m, w, b, mu, deltak, eta, nu, w_mult_nu: Physical parameters and tensors representing the quantum system.
     """
-    def __init__(self, ti, mu, deltak=torch.tensor([1, 0, 0]) * 4 * torch.pi / 355e-9):
-        super(SpinDecoder, self).__init__()
+    def __init__(self, ti, mu, deltak=torch.Tensor([1, 0, 0]) * 4 * torch.pi / 355e-9):
+        super().__init__()
+        # Define the constants and parameters directly as class attributes
         self.N = ti.N
 
-        # Define the constants and parameters directly as class attributes
-        self.hbar = torch.tensor(trical.misc.constants.hbar, dtype=torch.float32)
-        self.m = torch.tensor(ti.m, dtype=torch.float32)
-        self.w = torch.tensor(ti.w, dtype=torch.float32)
-        self.b = ti.b.reshape(3, self.N, 3 * self.N).to(torch.float32)
+        self.hbar = torch.Tensor([trical.misc.constants.hbar]).to(torch.float32)
+        self.m = torch.Tensor([ti.m]).to(torch.float32)
+        self.w = torch.from_numpy(ti.w).to(torch.float32)
+        self.b = torch.from_numpy(ti.b).to(torch.float32).reshape(3, self.N, 3 * self.N)
         self.mu = mu.to(torch.float32)
         self.deltak = deltak.to(torch.float32)
-
+        
         # Compute additional parameters
-        sqrt_term = torch.sqrt(self.hbar / (2 * self.m * self.w))
-        self.eta = torch.matmul(self.b, self.deltak.view(-1, 1)).view(self.N, 3) * sqrt_term
+        self.eta = torch.einsum("kim,k,m->im", self.b, self.deltak, torch.sqrt(self.hbar / (2 * self.m * self.w)))
         self.nu = 1 / ((self.mu**2)[:, None] - (self.w**2)[None, :])
         self.w_mult_nu = self.w * self.nu
 
+        pass
+
+    
     def vectorize_J(self, x):
         """
         Converts a matrix J to a vector by extracting the upper triangular part.
@@ -67,16 +69,16 @@ class SpinDecoder(nn.Module):
         return J
 
     def forward(self, x):
-        # Replace einsum for more intuitive tensor operations
-        y = torch.matmul(x.unsqueeze(-1), self.eta.unsqueeze(0)).squeeze(-1)
-        y = torch.matmul(y, (y * self.w_mult_nu).transpose(-1, -2))
-        
-        vectorized_y = self.vectorize_J(y)
-        normalized_y = vectorized_y / torch.norm(vectorized_y, dim=-1, keepdim=True)
-        return normalized_y
+        y = torch.einsum("...im,in->...imn", x, self.eta)
+        y = torch.einsum("...imn,...jmn->...ij", y, y * self.w_mult_nu)
+        y = self.vectorize_J(y)
+        y = y / torch.norm(y, dim=-1, keepdim=True)
+        return y
+
+    pass
+
 
 ########################################################################################
-
 class RabiEncoder(nn.Module):
     """
     Encodes Rabi frequencies for a quantum system using a neural network.
@@ -105,11 +107,14 @@ class RabiEncoder(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(self.N * (self.N - 1) // 2, self.N_h),
             self.activation,
-            nn.Linear(self.N_h, self.N_h),
-            self.activation,
             nn.Linear(self.N_h, self.N * self.N)
-            
         )
+
+    def forward(self, x):
+        y = self.layers(x)
+        y = y.reshape(-1, self.N, self.N)
+
+        return y
         
     def forwardOmega(self, x):
         """
@@ -121,7 +126,7 @@ class RabiEncoder(nn.Module):
         Returns:
         - Tensor: Normalized tensor after encoding.
         """
-        y = self.forward(x)
+        y = self(x)
         return y / torch.norm(y, dim=(-1, -2), keepdim=True)
 
 
@@ -167,7 +172,6 @@ class PrISM(nn.Module):
         y = self.encoder(x)
         return self.decoder(y)
 
-    # TODO: understand how these loss functions compares target and predicted configuration matrices
 
     def reconstruction_loss(self, x):
         """

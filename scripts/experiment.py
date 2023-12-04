@@ -76,7 +76,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import seaborn as sns
 
 import trical
-import triprism.model
+import triprism.old_model
+
 
 ########################################################################################
 
@@ -162,7 +163,7 @@ for epoch in range(N_epochs):
 
     optimizer.zero_grad()
 
-    train_infidelity = model.train().smoothed_reconstruction_loss(J_train, 1e-2)
+    train_infidelity = model.train().reconstruction_loss(J_train)
 
     running_loss = train_infidelity
     running_loss.backward()
