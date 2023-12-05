@@ -215,7 +215,7 @@ for epoch in range(N_epochs):
     )
     sys.stdout.flush()
     
-    #     # Severyn's possible oprimized version
+    #     # Severyn's possible optimized version
     # progress_bar = "=" * (int(np.floor((epoch + 1) / N_epochs * 60)) - 1) + ">" \
     # if epoch + 1 < N_epochs else "=" * 60
 
@@ -229,34 +229,41 @@ for epoch in range(N_epochs):
 
 ########################################################################################
 
-alpha = torch.linspace(0, 5, 101).to(device)
-J = torch.from_numpy(np.indices((N, N))).to(device)
-J = 1 / torch.abs(J[0] - J[1])[None, :, :] ** alpha[:, None, None]
-J[..., range(N), range(N)] = 0
+# Define interaction strength based on distance with variable exponent
+alpha = torch.linspace(0, 5, 101).to(device)  # Range of exponents for interaction strength
+J = torch.from_numpy(np.indices((N, N))).to(device)  # Matrix of indices for interaction calculation
+J = 1 / torch.abs(J[0] - J[1])[None, :, :] ** alpha[:, None, None]  # Calculate interaction strengths
+J[..., range(N), range(N)] = 0  # Set diagonal elements to zero (self-interaction)
 
-x = model.decoder.vectorize_J(J)
-x = x / torch.norm(x, dim=-1, keepdim=True)
-J = model.decoder.matrixify_J(x)
+# Normalize the interaction matrix and transform it back and forth using the model
+x = model.decoder.vectorize_J(J)  # Vectorize the interaction matrix
+x = x / torch.norm(x, dim=-1, keepdim=True)  # Normalize the vector
+J = model.decoder.matrixify_J(x)  # Reconstruct the interaction matrix from the vector
 
-Jnn = model.decoder.matrixify_J(model(x))
-Omega = model.encoder.forwardOmega(x)
-
-J = J / torch.norm(J, dim=(-1, -2), keepdim=True)
-Jnn = Jnn / torch.norm(Jnn, dim=(-1, -2), keepdim=True)
+# Generate and normalize the nearest-neighbor interaction matrix and Rabi frequencies
+Jnn = model.decoder.matrixify_J(model(x))  # Generate nearest-neighbor interaction matrix
+Omega = model.encoder.forwardOmega(x)  # Calculate Rabi frequencies
+J = J / torch.norm(J, dim=(-1, -2), keepdim=True)  # Normalize the interaction matrix
+Jnn = Jnn / torch.norm(Jnn, dim=(-1, -2), keepdim=True)  # Normalize the nearest-neighbor matrix
 
 # ########################################################################################
 
+# Plotting interactions and Rabi frequencies in 3D bar plots
 fig = plt.figure()
-ax = fig.subplots(1, 3, subplot_kw=dict(projection="3d"))
+ax = fig.subplots(1, 3, subplot_kw=dict(projection="3d")) # Create 3 subplots with 3D projection
 
-i = 10
+i = 10  # Index of the data slice to plot
 
+# Set up color normalization for the plots
 norm = colors.Normalize(
     torch.stack([J[i], Jnn[i]]).min(), torch.stack([J[i], Jnn[i]]).max()
 )
 norm2 = colors.Normalize(min(Omega[i].min(), 0), max(Omega[i].max(), 0))
 
+# Create meshgrid for plotting
 XX, YY = np.meshgrid(range(N), range(N))
+
+# Plot original interaction matrix
 ax[0].bar3d(
     XX.flatten(),
     YY.flatten(),
@@ -267,6 +274,8 @@ ax[0].bar3d(
     shade=True,
     color=cm.viridis(norm(J[i].cpu().detach().numpy().flatten())),
 )
+
+# Plot nearest-neighbor interaction matrix
 ax[1].bar3d(
     XX.flatten(),
     YY.flatten(),
@@ -277,6 +286,8 @@ ax[1].bar3d(
     shade=True,
     color=cm.viridis(norm(Jnn[i].cpu().detach().numpy().flatten())),
 )
+
+# Plot Rabi frequencies
 ax[2].bar3d(
     XX.flatten(),
     YY.flatten(),
@@ -288,22 +299,27 @@ ax[2].bar3d(
     color=cm.plasma(norm2(Omega[i].cpu().detach().numpy().flatten())),
 )
 
+# Set the z-axis limits for the Rabi frequencies plot
 ax[2].set_zlim(
     min(Omega[i].min().cpu().detach().numpy(), 0),
     max(Omega[i].max().cpu().detach().numpy(), 0),
 )
-
+# Save the first plot
 fig.savefig("plot1.png")
 
 ########################################################################################
 
-F = (J * Jnn).sum(dim=(-1, -2))
+# Calculate and plot the fidelity measure
+F = (J * Jnn).sum(dim=(-1, -2))  # Calculate fidelity measure
 
 fig = plt.figure()
-ax = fig.subplots(1, 1)
+ax = fig.subplots(1, 1) # Create a single subplot
 
+# Plot fidelity measure against alpha
 ax.plot(alpha.cpu().detach().numpy(), F.cpu().detach().numpy())
 
+
+# Save the second plot
 ax.set_label(r"$\alpha$")
 ax.set_ylabel(
     r"$\mathcal{F} \left( J_{ij} (\Omega^{\mathrm{NN}}), 1 / |i-j|^\alpha \right)$"
@@ -314,16 +330,26 @@ fig.savefig("plot2.png")
 
 # save loss and fidelity plots
 def plot_train_vs_val(train, val, title, save_path):
-    epochs = np.arange(len(train))
-    plt.cla()
-    plt.plot(epochs, train, label="Train")
-    plt.plot(epochs, val, label="Val")
-    plt.xlabel("Epoch")
-    plt.ylabel(title)
-    plt.title(title)
-    plt.legend()
-    plt.savefig(save_path)
+    """
+    Plot training vs validation data.
 
+    Args:
+        train (list): Training data.
+        val (list): Validation data.
+        title (str): Title of the plot.
+        save_path (str): Filepath where the plot will be saved.
+    """
+    epochs = np.arange(len(train))  # Generate an array of epoch numbers
+    plt.cla()  # Clear the current axes
+    plt.plot(epochs, train, label="Train")  # Plot training data
+    plt.plot(epochs, val, label="Val")  # Plot validation data
+    plt.xlabel("Epoch")  # Set the x-axis label
+    plt.ylabel(title)  # Set the y-axis label
+    plt.title(title)  # Set the plot title
+    plt.legend()  # Add a legend
+    plt.savefig(save_path)  # Save the plot
+
+# Plot and save training vs validation loss and fidelity
 plot_train_vs_val(train_losses, val_losses, "Loss", "loss.png")
 plot_train_vs_val(train_fidelities, val_fidelities, "Fidelity", "fidelity.png")
 
