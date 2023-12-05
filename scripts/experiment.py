@@ -140,7 +140,7 @@ N_epochs = 250
 batch_size = 1000
 
 lr = 0.001
-optimizer_algorithm = AdamW
+optimizer_algorithm = Adam
 schedule_params = {"factor": 1}
 schedule_algorithm = lr_scheduler.ConstantLR # use for some optimizer algorithms
 optimizer = optimizer_algorithm(model.parameters(), lr=lr)
