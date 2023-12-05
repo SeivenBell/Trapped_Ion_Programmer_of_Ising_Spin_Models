@@ -21,7 +21,7 @@ In essence, this project exemplifies the intersection of machine learning and qu
 
 
 Project Tree:
-
+```
 Trapped_Ion_Programmer_of_Ising_Spin_Models
 |
 ├───scripts
@@ -39,7 +39,7 @@ Trapped_Ion_Programmer_of_Ising_Spin_Models
 │   ├───trical.egg-info
 │   └───tutorial
 └───triprism (Our model and data generator)
-
+```
 
 
 
