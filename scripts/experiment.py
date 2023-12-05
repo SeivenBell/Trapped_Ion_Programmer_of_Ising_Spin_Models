@@ -76,7 +76,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import seaborn as sns
 
 import trical
-import triprism.old_model
+import triprism
 
 
 ########################################################################################
