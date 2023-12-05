@@ -91,15 +91,19 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ########################################################################################
 
-N = 10
-m = trical.misc.constants.convert_m_a(171)
-l = 1e-6
+N = 10 # number of ions in configuration
+m = trical.misc.constants.convert_m_a(171)  # Mass of Yb+ ion in atomic mass units
+l = 1e-6  # Characteristic length scale in meters
 
-omega = 2 * np.pi * np.array([5, 5.1, 0.41]) * 1e6
-alpha = np.zeros([3, 3, 3])
-alpha[tuple(np.eye(3, dtype=int) * 2)] = m * omega**2 / 2
-tp = trical.classes.PolynomialPotential(alpha)
+# Define trap frequencies for each dimension in Hz
+omega = 2 * np.pi * np.array([5, 5.1, 0.41]) * 1e6  # Trap frequencies in Hz
 
+# Initialize the quadratic coefficients for the trapping potential
+alpha = np.zeros([3, 3, 3])  # Tensor to hold quadratic coefficients
+alpha[tuple(np.eye(3, dtype=int) * 2)] = m * omega**2 / 2  # Populate diagonal elements
+tp = trical.classes.PolynomialPotential(alpha)  # Create a polynomial potential object
+
+# Initialize the TrappedIons class and calculate normal modes
 ti = trical.classes.TrappedIons(N, tp)
 ti.normal_modes(block_sort=True)
 
