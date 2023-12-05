@@ -1,4 +1,3 @@
-# Imports
 """
 This script is designed for the simulation and analysis of quantum systems, particularly focused on trapped ions using machine learning techniques. 
 
@@ -48,6 +47,8 @@ Usage:
 
 """
 
+# Imports
+
 import os
 import sys
 
@@ -61,11 +62,11 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from torch.optim import lr_scheduler
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 
 from torchinfo import summary
 
-import mlflow
+#import mlflow
 
 import matplotlib
 from matplotlib import colors, cm, patches
@@ -76,6 +77,7 @@ import seaborn as sns
 
 import trical
 import triprism
+
 
 ########################################################################################
 
@@ -109,48 +111,70 @@ ti.normal_modes(block_sort=True)
 
 ########################################################################################
 
-omicron = 0.1
-wx = ti.w[:N]
+# Define the detuning parameter and calculate modified trap frequencies
+omicron = 0.1  # Detuning parameter
+wx = ti.w[:N]  # Extract trap frequencies for each ion
 _wx = np.concatenate([wx[0:1] + (wx[0:1] - wx[-1:]) / N, wx], axis=0)
-mu = _wx[1:] + omicron * (_wx[:-1] - _wx[1:])
-mu = torch.from_numpy(mu)
+mu = _wx[1:] + omicron * (_wx[:-1] - _wx[1:])  # Modify frequencies based on detuning
+mu = torch.from_numpy(mu)  # Convert to a torch tensor
 
 #######################################################################################
 
-N_h = 1024
-encoder = triprism.RabiEncoder(N, N_h)
-decoder = triprism.SpinDecoder(ti, mu)
+# Define model architecture parameters
+N_h = 1024 # Replace with the number of hidden layers
+encoder = triprism.RabiEncoder(N, N_h)  # Initialize the encoder
+decoder = triprism.SpinDecoder(ti, mu)  # Initialize the decoder
 
 model = triprism.PrISM(encoder=encoder, decoder=decoder)
 model.to(device=device)
 
 ########################################################################################
 
+# Print a summary of the model
 print(summary(model, input_size=[10, int(N * (N - 1) / 2)], device=device))
 print("")
 
 #######################################################################################
 
-N_epochs = 
-batch_size = 
+N_epochs = 250
+batch_size = 1000
 
-lr =
-optimizer_algorithm = 
-schedule_params = {"": }
-schedule_algorithm = 
-optimizer = optimizer_algorithm()
-schedule = schedule_algorithm()
+lr = 0.001
+optimizer_algorithm = Adam
+schedule_params = {"factor": 1}
+schedule_algorithm = lr_scheduler.ConstantLR # use for some optimizer algorithms
+optimizer = optimizer_algorithm(model.parameters(), lr=lr)
+schedule = schedule_algorithm(optimizer, **schedule_params) # use for some optimizer algorithms
 
 ########################################################################################
 
 step = 0
-for epoch in range(N_epochs):
-    
-    
-    
-    
-    
+train_fidelities = []
+val_fidelities = []
 
+train_losses = []
+val_losses = []
+
+
+# Training loop
+for epoch in range(N_epochs):
+    J_train = triprism.generate_random_interactions(N, batch_size, device)
+    J_val = triprism.generate_random_interactions(N, batch_size, device)
+
+    optimizer.zero_grad()
+
+    train_infidelity = model.train().reconstruction_loss(J_train)
+
+    running_loss = train_infidelity
+    running_loss.backward()
+    optimizer.step()
+    schedule.step()
+    step += 1
+
+    # Calculate validation infidelity
+    val_infidelity = model.eval().reconstruction_loss(J_val)
+    val_loss = val_infidelity
+    # Update metrics
     metrics = dict(
         epoch=epoch + 1,
         train_loss=running_loss,
@@ -161,45 +185,85 @@ for epoch in range(N_epochs):
         val_fidelity=1 - train_infidelity,
     )
 
+    # save performance metrics after each epoch
+    train_fidelities.append(metrics["train_fidelity"].cpu().detach().numpy())
+    val_fidelities.append(metrics["val_fidelity"].cpu().detach().numpy())
+
+    train_losses.append(metrics["train_loss"].cpu().detach().numpy())
+    val_losses.append(metrics["val_loss"].cpu().detach().numpy())
+
     ########################################################################################
 
     print(
-       
+        "{:<180}".format(
+            "\r"
+            + "[{:<60}] ".format(
+                "=" * ((np.floor((epoch + 1) / N_epochs * 60)).astype(int) - 1) + ">"
+                if epoch + 1 < N_epochs
+                else "=" * 60
+            )
+            + "{:<40}".format(
+                "Epoch {}/{}: Fidelity(Train) = {:.5f}, Fidelity(Val) = {:.5f}".format(
+                    metrics["epoch"],
+                    N_epochs,
+                    metrics["train_fidelity"],
+                    metrics["val_fidelity"],
                 )
-    
-    
+            )
+        ),
+        end="",
+    )
     sys.stdout.flush()
+    
+    #     # Severyn's possible optimized version
+    # progress_bar = "=" * (int(np.floor((epoch + 1) / N_epochs * 60)) - 1) + ">" \
+    # if epoch + 1 < N_epochs else "=" * 60
+
+    # print(
+    #     "\r[{:<60}] Epoch {}/{}: Fidelity(Train) = {:.5f}, Fidelity(Val) = {:.5f}".format(
+    #         progress_bar, epoch + 1, N_epochs, metrics['train_fidelity'], metrics['val_fidelity']
+    #     ),
+    #     end=""
+    # )
+    # sys.stdout.flush()
 
 ########################################################################################
 
-alpha = 
-J = 
-J = 
-J[..., range(N), range(N)] = 0
+# Define interaction strength based on distance with variable exponent
+alpha = torch.linspace(0, 5, 101).to(device)  # Range of exponents for interaction strength
+J = torch.from_numpy(np.indices((N, N))).to(device)  # Matrix of indices for interaction calculation
+J = 1 / torch.abs(J[0] - J[1])[None, :, :] ** alpha[:, None, None]  # Calculate interaction strengths
+J[..., range(N), range(N)] = 0  # Set diagonal elements to zero (self-interaction)
 
-x = 
-x = 
-J = 
+# Normalize the interaction matrix and transform it back and forth using the model
+x = model.decoder.vectorize_J(J)  # Vectorize the interaction matrix
+x = x / torch.norm(x, dim=-1, keepdim=True)  # Normalize the vector
+J = model.decoder.matrixify_J(x)  # Reconstruct the interaction matrix from the vector
 
-Jnn = 
-Omega = 
-
-J = J / torch.norm(J, dim=(-1, -2), keepdim=True)
-Jnn = Jnn / torch.norm(Jnn, dim=(-1, -2), keepdim=True)
+# Generate and normalize the nearest-neighbor interaction matrix and Rabi frequencies
+Jnn = model.decoder.matrixify_J(model(x))  # Generate nearest-neighbor interaction matrix
+Omega = model.encoder.forwardOmega(x)  # Calculate Rabi frequencies
+J = J / torch.norm(J, dim=(-1, -2), keepdim=True)  # Normalize the interaction matrix
+Jnn = Jnn / torch.norm(Jnn, dim=(-1, -2), keepdim=True)  # Normalize the nearest-neighbor matrix
 
 # ########################################################################################
 
+# Plotting interactions and Rabi frequencies in 3D bar plots
 fig = plt.figure()
-ax = fig.subplots(1, 3, subplot_kw=dict(projection="3d"))
+ax = fig.subplots(1, 3, subplot_kw=dict(projection="3d")) # Create 3 subplots with 3D projection
 
-i = 
+i = 10  # Index of the data slice to plot
 
+# Set up color normalization for the plots
 norm = colors.Normalize(
     torch.stack([J[i], Jnn[i]]).min(), torch.stack([J[i], Jnn[i]]).max()
 )
 norm2 = colors.Normalize(min(Omega[i].min(), 0), max(Omega[i].max(), 0))
 
+# Create meshgrid for plotting
 XX, YY = np.meshgrid(range(N), range(N))
+
+# Plot original interaction matrix
 ax[0].bar3d(
     XX.flatten(),
     YY.flatten(),
@@ -210,6 +274,8 @@ ax[0].bar3d(
     shade=True,
     color=cm.viridis(norm(J[i].cpu().detach().numpy().flatten())),
 )
+
+# Plot nearest-neighbor interaction matrix
 ax[1].bar3d(
     XX.flatten(),
     YY.flatten(),
@@ -220,6 +286,8 @@ ax[1].bar3d(
     shade=True,
     color=cm.viridis(norm(Jnn[i].cpu().detach().numpy().flatten())),
 )
+
+# Plot Rabi frequencies
 ax[2].bar3d(
     XX.flatten(),
     YY.flatten(),
@@ -231,22 +299,58 @@ ax[2].bar3d(
     color=cm.plasma(norm2(Omega[i].cpu().detach().numpy().flatten())),
 )
 
+# Set the z-axis limits for the Rabi frequencies plot
 ax[2].set_zlim(
     min(Omega[i].min().cpu().detach().numpy(), 0),
     max(Omega[i].max().cpu().detach().numpy(), 0),
 )
-
+# Save the first plot
+fig.savefig("plot1.png")
 
 ########################################################################################
 
-F = (J * Jnn).sum(dim=(-1, -2))
+# Calculate and plot the fidelity measure
+F = (J * Jnn).sum(dim=(-1, -2))  # Calculate fidelity measure
 
 fig = plt.figure()
-ax = fig.subplots(1, 1)
+ax = fig.subplots(1, 1) # Create a single subplot
 
+# Plot fidelity measure against alpha
 ax.plot(alpha.cpu().detach().numpy(), F.cpu().detach().numpy())
 
-ax.set_xlabel(r"$\alpha$")
+
+# Save the second plot
+ax.set_label(r"$\alpha$")
 ax.set_ylabel(
     r"$\mathcal{F} \left( J_{ij} (\Omega^{\mathrm{NN}}), 1 / |i-j|^\alpha \right)$"
 )
+
+fig.savefig("plot2.png")
+
+
+# save loss and fidelity plots
+def plot_train_vs_val(train, val, title, save_path):
+    """
+    Plot training vs validation data.
+
+    Args:
+        train (list): Training data.
+        val (list): Validation data.
+        title (str): Title of the plot.
+        save_path (str): Filepath where the plot will be saved.
+    """
+    epochs = np.arange(len(train))  # Generate an array of epoch numbers
+    plt.cla()  # Clear the current axes
+    plt.plot(epochs, train, label="Train")  # Plot training data
+    plt.plot(epochs, val, label="Val")  # Plot validation data
+    plt.xlabel("Epoch")  # Set the x-axis label
+    plt.ylabel(title)  # Set the y-axis label
+    plt.title(title)  # Set the plot title
+    plt.legend()  # Add a legend
+    plt.savefig(save_path)  # Save the plot
+
+# Plot and save training vs validation loss and fidelity
+plot_train_vs_val(train_losses, val_losses, "Loss", "loss.png")
+plot_train_vs_val(train_fidelities, val_fidelities, "Fidelity", "fidelity.png")
+
+
